@@ -1,3 +1,3 @@
-test('dummy fail for CI evidence', () => {
-  expect(1).toBe(2);
+test('dummy pass for CI evidence', () => {
+  expect(1).toBe(1);
 });
