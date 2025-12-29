@@ -1,0 +1,61 @@
+name: Continuous Deployment
+
+on:
+  push:
+    branches: [ "master", "main" ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check required secrets
+        id: check
+        run: |
+          missing=0
+          if [ -z "${{ secrets.SERVER_HOST }}" ]; then echo "SERVER_HOST is missing"; missing=1; fi
+          if [ -z "${{ secrets.SERVER_USER }}" ]; then echo "SERVER_USER is missing"; missing=1; fi
+          if [ -z "${{ secrets.SERVER_SSH_KEY }}" ]; then echo "SERVER_SSH_KEY is missing"; missing=1; fi
+          if [ -z "${{ secrets.SERVER_SSH_PORT }}" ]; then echo "SERVER_SSH_PORT is missing"; missing=1; fi
+
+          if [ "$missing" -eq 1 ]; then
+            echo "Secrets deploy belum lengkap. Deploy di-skip agar workflow tidak gagal."
+            echo "skip=true" >> $GITHUB_OUTPUT
+          else
+            echo "skip=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Checkout
+        if: steps.check.outputs.skip != 'true'
+        uses: actions/checkout@v4
+
+      - name: Deploy via SSH
+        if: steps.check.outputs.skip != 'true'
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          port: ${{ secrets.SERVER_SSH_PORT }}
+          script: |
+            set -e
+            # === SESUAIKAN PATH INI DI SERVER ===
+            cd /var/www/forum-api
+
+            # Pull latest
+            git pull origin master || git pull origin main
+
+            # Install prod deps
+            npm ci --omit=dev
+
+            # Prod migrations (opsional - kalau Anda punya config/database/prod.json)
+            if [ -f config/database/prod.json ]; then
+              npx node-pg-migrate up -f config/database/prod.json
+            fi
+
+            # Restart app (PM2 / systemd)
+            if command -v pm2 >/dev/null 2>&1; then
+              pm2 restart forum-api || pm2 start src/app.js --name forum-api
+            else
+              sudo systemctl restart forum-api || true
+            fi
