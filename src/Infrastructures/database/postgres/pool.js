@@ -1,10 +1,15 @@
-/* istanbul ignore file */
 const { Pool } = require('pg');
+const fs = require('fs');
 
-// Dicoding starter style: test DB config is taken from config/database/test.json
-// so migration & tests do not depend on custom *_TEST env vars.
-const testConfig = require('../../../../config/database/test.json');
+const caPath = process.env.PGSSLROOTCERT || '/etc/ssl/aiven/ca.pem';
 
-const pool = process.env.NODE_ENV === 'test' ? new Pool(testConfig) : new Pool();
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: process.env.DATABASE_URL?.includes('sslmode=require')
+    ? {
+        rejectUnauthorized: false,
+      }
+    : false,
+});
 
 module.exports = pool;

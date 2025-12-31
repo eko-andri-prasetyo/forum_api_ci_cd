@@ -1,12 +1,17 @@
+// src/Infrastructures/http/createServer.js
+
 const Hapi = require('@hapi/hapi');
 const Jwt = require('@hapi/jwt');
+
 const ClientError = require('../../Commons/exceptions/ClientError');
 const DomainErrorTranslator = require('../../Commons/exceptions/DomainErrorTranslator');
+
 const users = require('../../Interfaces/http/api/users');
 const authentications = require('../../Interfaces/http/api/authentications');
 const threads = require('../../Interfaces/http/api/threads');
 const comments = require('../../Interfaces/http/api/comments');
 const replies = require('../../Interfaces/http/api/replies');
+const likes = require('../../Interfaces/http/api/likes');
 
 const createServer = async (container) => {
   const server = Hapi.server({
@@ -14,16 +19,17 @@ const createServer = async (container) => {
     port: process.env.PORT,
   });
 
+  // Register JWT plugin dulu
   await server.register(Jwt);
 
+  // Wajib: nama strategy harus sama dengan yang dipakai di routes: 'forumapi_jwt'
   server.auth.strategy('forumapi_jwt', 'jwt', {
     keys: process.env.ACCESS_TOKEN_KEY,
     verify: {
       aud: false,
       iss: false,
       sub: false,
-      // Starter project Dicoding (Forum API) sering memakai env `ACCCESS_TOKEN_AGE` (3x C).
-      // Agar proyek tetap kompatibel, kita fallback ke kedua nama env tersebut.
+      // Starter Dicoding kadang typo ACCCESS_TOKEN_AGE (3x C), jadi kita fallback.
       maxAgeSec: Number(process.env.ACCESS_TOKEN_AGE || process.env.ACCCESS_TOKEN_AGE),
     },
     validate: (artifacts) => ({
@@ -34,6 +40,7 @@ const createServer = async (container) => {
     }),
   });
 
+  // Register semua plugin routes (users, auth, threads, comments, replies, likes)
   await server.register([
     {
       plugin: users,
@@ -47,25 +54,38 @@ const createServer = async (container) => {
       plugin: threads,
       options: { container },
     },
-      {
-        plugin: comments,
-        options: { container },
-      },
-      {
-        plugin: replies,
-        options: { container },
-      },
+    {
+      plugin: comments,
+      options: { container },
+    },
+    {
+      plugin: replies,
+      options: { container },
+    },
+    {
+      plugin: likes,
+      options: { container },
+    },
   ]);
 
+  // Debug: print registered routes for verification
+  try {
+    const routeTable = server.table().map((r) => `${r.method.toUpperCase()} ${r.path}`);
+    console.log('Registered routes:', routeTable);
+  } catch (e) {
+    console.error('Failed to list routes', e);
+  }
+
+  // Global error handler (DomainErrorTranslator + ClientError)
   server.ext('onPreResponse', (request, h) => {
-    // mendapatkan konteks response dari request
+
     const { response } = request;
 
     if (response instanceof Error) {
-      // bila response tersebut error, tangani sesuai kebutuhan
+      console.error('🔥 SERVER ERROR:', response);
       const translatedError = DomainErrorTranslator.translate(response);
 
-      // penanganan client error secara internal.
+      // Client error (4xx) dari domain kita
       if (translatedError instanceof ClientError) {
         const newResponse = h.response({
           status: 'fail',
@@ -75,12 +95,12 @@ const createServer = async (container) => {
         return newResponse;
       }
 
-      // mempertahankan penanganan client error oleh hapi secara native, seperti 404, etc.
+      // Biarkan Hapi handle error non-server (misal 404 Not Found default)
       if (!translatedError.isServer) {
         return h.continue;
       }
 
-      // penanganan server error sesuai kebutuhan
+      // Server error (5xx)
       const newResponse = h.response({
         status: 'error',
         message: 'terjadi kegagalan pada server kami',
@@ -89,7 +109,6 @@ const createServer = async (container) => {
       return newResponse;
     }
 
-    // jika bukan error, lanjutkan dengan response sebelumnya (tanpa terintervensi)
     return h.continue;
   });
 

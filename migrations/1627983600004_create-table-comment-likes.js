@@ -1,0 +1,26 @@
+/* eslint-disable camelcase */
+
+exports.up = (pgm) => {
+  pgm.createTable('comment_likes', {
+    user_id: {
+      type: 'VARCHAR(50)',
+      notNull: true,
+      references: 'users(id)',
+      onDelete: 'CASCADE',
+    },
+    comment_id: {
+      type: 'VARCHAR(50)',
+      notNull: true,
+      references: 'comments(id)',
+      onDelete: 'CASCADE',
+    },
+  });
+
+  pgm.addConstraint('comment_likes', 'unique_user_comment_like', {
+    unique: ['user_id', 'comment_id'],
+  });
+};
+
+exports.down = (pgm) => {
+  pgm.dropTable('comment_likes');
+};

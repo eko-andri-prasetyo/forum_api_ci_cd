@@ -1,87 +1,57 @@
-/* istanbul ignore file */
-
 const { createContainer } = require('instances-container');
-
-// external agency
-const { nanoid } = require('nanoid');
-const bcrypt = require('bcrypt');
 const Jwt = require('@hapi/jwt');
-const pool = require('./database/postgres/pool');
 
-// service (repository, helper, manager, etc)
-const UserRepository = require('../Domains/users/UserRepository');
-const PasswordHash = require('../Applications/security/PasswordHash');
-const UserRepositoryPostgres = require('./repository/UserRepositoryPostgres');
+/* ========= EXTERNAL WRAPPER ========= */
+const Pool = require('./externals/Pool');
+const IdGenerator = require('./externals/IdGenerator');
+const Bcrypt = require('./externals/Bcrypt');
+
+/* ========= SECURITY ========= */
 const BcryptPasswordHash = require('./security/BcryptPasswordHash');
-
-// thread / comment / reply
-const ThreadRepository = require('../Domains/threads/ThreadRepository');
-const ThreadRepositoryPostgres = require('./repository/ThreadRepositoryPostgres');
-const CommentRepository = require('../Domains/comments/CommentRepository');
-const CommentRepositoryPostgres = require('./repository/CommentRepositoryPostgres');
-const ReplyRepository = require('../Domains/replies/ReplyRepository');
-const ReplyRepositoryPostgres = require('./repository/ReplyRepositoryPostgres');
-
-// use case
-const AddUserUseCase = require('../Applications/use_case/AddUserUseCase');
-const AuthenticationTokenManager = require('../Applications/security/AuthenticationTokenManager');
 const JwtTokenManager = require('./security/JwtTokenManager');
-const LoginUserUseCase = require('../Applications/use_case/LoginUserUseCase');
-const AuthenticationRepository = require('../Domains/authentications/AuthenticationRepository');
+
+/* ========= REPOSITORIES ========= */
+const UserRepositoryPostgres = require('./repository/UserRepositoryPostgres');
 const AuthenticationRepositoryPostgres = require('./repository/AuthenticationRepositoryPostgres');
+const ThreadRepositoryPostgres = require('./repository/ThreadRepositoryPostgres');
+const CommentRepositoryPostgres = require('./repository/CommentRepositoryPostgres');
+const ReplyRepositoryPostgres = require('./repository/ReplyRepositoryPostgres');
+const CommentLikeRepositoryPostgres = require('./repository/CommentLikeRepositoryPostgres');
+
+/* ========= USE CASES ========= */
+const AddUserUseCase = require('../Applications/use_case/AddUserUseCase');
+const LoginUserUseCase = require('../Applications/use_case/LoginUserUseCase');
 const LogoutUserUseCase = require('../Applications/use_case/LogoutUserUseCase');
 const RefreshAuthenticationUseCase = require('../Applications/use_case/RefreshAuthenticationUseCase');
-
 const AddThreadUseCase = require('../Applications/use_case/AddThreadUseCase');
-const GetThreadUseCase = require('../Applications/use_case/GetThreadUseCase');
 const AddCommentUseCase = require('../Applications/use_case/AddCommentUseCase');
 const DeleteCommentUseCase = require('../Applications/use_case/DeleteCommentUseCase');
 const AddReplyUseCase = require('../Applications/use_case/AddReplyUseCase');
 const DeleteReplyUseCase = require('../Applications/use_case/DeleteReplyUseCase');
+const ToggleLikeCommentUseCase = require('../Applications/use_case/ToggleLikeCommentUseCase');
+const GetThreadUseCase = require('../Applications/use_case/GetThreadUseCase');
 
-// creating container
 const container = createContainer();
 
-// registering services and repository
+/* ========= REGISTER EXTERNAL ========= */
+container.register([
+  { key: Pool.name, Class: Pool },
+  { key: IdGenerator.name, Class: IdGenerator },
+]);
+
+/* ========= REGISTER SECURITY ========= */
 container.register([
   {
-    key: UserRepository.name,
-    Class: UserRepositoryPostgres,
-    parameter: {
-      dependencies: [
-        {
-          concrete: pool,
-        },
-        {
-          concrete: nanoid,
-        },
-      ],
-    },
-  },
-  {
-    key: AuthenticationRepository.name,
-    Class: AuthenticationRepositoryPostgres,
-    parameter: {
-      dependencies: [
-        {
-          concrete: pool,
-        },
-      ],
-    },
-  },
-  {
-    key: PasswordHash.name,
+    key: BcryptPasswordHash.name,
     Class: BcryptPasswordHash,
     parameter: {
       dependencies: [
-        {
-          concrete: bcrypt,
-        },
+        { concrete: Bcrypt },
       ],
     },
   },
   {
-    key: AuthenticationTokenManager.name,
+    key: JwtTokenManager.name,
     Class: JwtTokenManager,
     parameter: {
       dependencies: [
@@ -91,40 +61,77 @@ container.register([
       ],
     },
   },
+]);
 
+/* ========= REGISTER REPOSITORIES ========= */
+container.register([
   {
-    key: ThreadRepository.name,
+    key: UserRepositoryPostgres.name,
+    Class: UserRepositoryPostgres,
+    parameter: {
+      injectType: 'destructuring',
+      dependencies: [
+        { name: 'pool', internal: Pool.name },
+        { name: 'idGenerator', internal: IdGenerator.name },
+      ],
+    },
+  },
+  {
+    key: AuthenticationRepositoryPostgres.name,
+    Class: AuthenticationRepositoryPostgres,
+    parameter: {
+      injectType: 'destructuring',
+      dependencies: [
+        { name: 'pool', internal: Pool.name },
+      ],
+    },
+  },
+  {
+    key: ThreadRepositoryPostgres.name,
     Class: ThreadRepositoryPostgres,
     parameter: {
+      injectType: 'destructuring',
       dependencies: [
-        { concrete: pool },
-        { concrete: nanoid },
+        { name: 'pool', internal: Pool.name },
+        { name: 'idGenerator', internal: IdGenerator.name },
       ],
     },
   },
   {
-    key: CommentRepository.name,
+    key: CommentRepositoryPostgres.name,
     Class: CommentRepositoryPostgres,
     parameter: {
+      injectType: 'destructuring',
       dependencies: [
-        { concrete: pool },
-        { concrete: nanoid },
+        { name: 'pool', internal: Pool.name },
+        { name: 'idGenerator', internal: IdGenerator.name },
       ],
     },
   },
   {
-    key: ReplyRepository.name,
+    key: ReplyRepositoryPostgres.name,
     Class: ReplyRepositoryPostgres,
     parameter: {
+      injectType: 'destructuring',
       dependencies: [
-        { concrete: pool },
-        { concrete: nanoid },
+        { name: 'pool', internal: Pool.name },
+        { name: 'idGenerator', internal: IdGenerator.name },
+      ],
+    },
+  },
+  {
+    key: CommentLikeRepositoryPostgres.name,
+    Class: CommentLikeRepositoryPostgres,
+    parameter: {
+      injectType: 'destructuring',
+      dependencies: [
+        { name: 'pool', internal: Pool.name },
       ],
     },
   },
 ]);
 
-// registering use cases
+/* ========= REGISTER USE CASES ========= */
 container.register([
   {
     key: AddUserUseCase.name,
@@ -132,14 +139,8 @@ container.register([
     parameter: {
       injectType: 'destructuring',
       dependencies: [
-        {
-          name: 'userRepository',
-          internal: UserRepository.name,
-        },
-        {
-          name: 'passwordHash',
-          internal: PasswordHash.name,
-        },
+        { name: 'userRepository', internal: UserRepositoryPostgres.name },
+        { name: 'passwordHash', internal: BcryptPasswordHash.name },
       ],
     },
   },
@@ -149,22 +150,10 @@ container.register([
     parameter: {
       injectType: 'destructuring',
       dependencies: [
-        {
-          name: 'userRepository',
-          internal: UserRepository.name,
-        },
-        {
-          name: 'authenticationRepository',
-          internal: AuthenticationRepository.name,
-        },
-        {
-          name: 'authenticationTokenManager',
-          internal: AuthenticationTokenManager.name,
-        },
-        {
-          name: 'passwordHash',
-          internal: PasswordHash.name,
-        },
+        { name: 'userRepository', internal: UserRepositoryPostgres.name },
+        { name: 'authenticationRepository', internal: AuthenticationRepositoryPostgres.name },
+        { name: 'authenticationTokenManager', internal: JwtTokenManager.name },
+        { name: 'passwordHash', internal: BcryptPasswordHash.name },
       ],
     },
   },
@@ -174,10 +163,7 @@ container.register([
     parameter: {
       injectType: 'destructuring',
       dependencies: [
-        {
-          name: 'authenticationRepository',
-          internal: AuthenticationRepository.name,
-        },
+        { name: 'authenticationRepository', internal: AuthenticationRepositoryPostgres.name },
       ],
     },
   },
@@ -187,37 +173,18 @@ container.register([
     parameter: {
       injectType: 'destructuring',
       dependencies: [
-        {
-          name: 'authenticationRepository',
-          internal: AuthenticationRepository.name,
-        },
-        {
-          name: 'authenticationTokenManager',
-          internal: AuthenticationTokenManager.name,
-        },
+        { name: 'authenticationRepository', internal: AuthenticationRepositoryPostgres.name },
+        { name: 'authenticationTokenManager', internal: JwtTokenManager.name },
       ],
     },
   },
-
   {
     key: AddThreadUseCase.name,
     Class: AddThreadUseCase,
     parameter: {
       injectType: 'destructuring',
       dependencies: [
-        { name: 'threadRepository', internal: ThreadRepository.name },
-      ],
-    },
-  },
-  {
-    key: GetThreadUseCase.name,
-    Class: GetThreadUseCase,
-    parameter: {
-      injectType: 'destructuring',
-      dependencies: [
-        { name: 'threadRepository', internal: ThreadRepository.name },
-        { name: 'commentRepository', internal: CommentRepository.name },
-        { name: 'replyRepository', internal: ReplyRepository.name },
+        { name: 'threadRepository', internal: ThreadRepositoryPostgres.name },
       ],
     },
   },
@@ -227,8 +194,8 @@ container.register([
     parameter: {
       injectType: 'destructuring',
       dependencies: [
-        { name: 'threadRepository', internal: ThreadRepository.name },
-        { name: 'commentRepository', internal: CommentRepository.name },
+        { name: 'threadRepository', internal: ThreadRepositoryPostgres.name },
+        { name: 'commentRepository', internal: CommentRepositoryPostgres.name },
       ],
     },
   },
@@ -238,8 +205,8 @@ container.register([
     parameter: {
       injectType: 'destructuring',
       dependencies: [
-        { name: 'threadRepository', internal: ThreadRepository.name },
-        { name: 'commentRepository', internal: CommentRepository.name },
+        { name: 'threadRepository', internal: ThreadRepositoryPostgres.name },
+        { name: 'commentRepository', internal: CommentRepositoryPostgres.name },
       ],
     },
   },
@@ -249,9 +216,9 @@ container.register([
     parameter: {
       injectType: 'destructuring',
       dependencies: [
-        { name: 'threadRepository', internal: ThreadRepository.name },
-        { name: 'commentRepository', internal: CommentRepository.name },
-        { name: 'replyRepository', internal: ReplyRepository.name },
+        { name: 'threadRepository', internal: ThreadRepositoryPostgres.name },
+        { name: 'commentRepository', internal: CommentRepositoryPostgres.name },
+        { name: 'replyRepository', internal: ReplyRepositoryPostgres.name },
       ],
     },
   },
@@ -261,9 +228,34 @@ container.register([
     parameter: {
       injectType: 'destructuring',
       dependencies: [
-        { name: 'threadRepository', internal: ThreadRepository.name },
-        { name: 'commentRepository', internal: CommentRepository.name },
-        { name: 'replyRepository', internal: ReplyRepository.name },
+        { name: 'threadRepository', internal: ThreadRepositoryPostgres.name },
+        { name: 'commentRepository', internal: CommentRepositoryPostgres.name },
+        { name: 'replyRepository', internal: ReplyRepositoryPostgres.name },
+      ],
+    },
+  },
+  {
+    key: ToggleLikeCommentUseCase.name,
+    Class: ToggleLikeCommentUseCase,
+    parameter: {
+      injectType: 'destructuring',
+      dependencies: [
+        { name: 'threadRepository', internal: ThreadRepositoryPostgres.name },
+        { name: 'commentRepository', internal: CommentRepositoryPostgres.name },
+        { name: 'commentLikeRepository', internal: CommentLikeRepositoryPostgres.name },
+      ],
+    },
+  },
+  {
+    key: GetThreadUseCase.name,
+    Class: GetThreadUseCase,
+    parameter: {
+      injectType: 'destructuring',
+      dependencies: [
+        { name: 'threadRepository', internal: ThreadRepositoryPostgres.name },
+        { name: 'commentRepository', internal: CommentRepositoryPostgres.name },
+        { name: 'replyRepository', internal: ReplyRepositoryPostgres.name },
+        { name: 'commentLikeRepository', internal: CommentLikeRepositoryPostgres.name },
       ],
     },
   },

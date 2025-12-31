@@ -4,7 +4,7 @@ const AddedReply = require('../../Domains/replies/entities/AddedReply');
 const DetailReply = require('../../Domains/replies/entities/DetailReply');
 
 class ReplyRepositoryPostgres extends ReplyRepository {
-  constructor(pool, idGenerator) {
+  constructor({ pool, idGenerator }) {
     super();
     this._pool = pool;
     this._idGenerator = idGenerator;

@@ -1,10 +1,11 @@
 const CommentRepository = require('../../Domains/comments/CommentRepository');
-const NotFoundError = require('../../Commons/exceptions/NotFoundError');
 const AddedComment = require('../../Domains/comments/entities/AddedComment');
-const DetailComment = require('../../Domains/comments/entities/DetailComment');
+
+const NotFoundError = require('../../Commons/exceptions/NotFoundError');
+const AuthorizationError = require('../../Commons/exceptions/AuthorizationError');
 
 class CommentRepositoryPostgres extends CommentRepository {
-  constructor(pool, idGenerator) {
+  constructor({ pool, idGenerator }) {
     super();
     this._pool = pool;
     this._idGenerator = idGenerator;
@@ -15,22 +16,33 @@ class CommentRepositoryPostgres extends CommentRepository {
     const id = `comment-${this._idGenerator()}`;
 
     const query = {
-      text: 'INSERT INTO comments(id, thread_id, content, owner) VALUES($1, $2, $3, $4) RETURNING id, content, owner',
+      text: `
+        INSERT INTO comments (id, thread_id, content, owner)
+        VALUES ($1, $2, $3, $4)
+        RETURNING id, content, owner
+      `,
       values: [id, threadId, content, owner],
     };
 
     const result = await this._pool.query(query);
-
-    return new AddedComment({
-      id: result.rows[0].id,
-      content: result.rows[0].content,
-      owner: result.rows[0].owner,
-    });
+    return new AddedComment(result.rows[0]);
   }
 
-  async getCommentById(commentId) {
+  async verifyCommentIsExist(commentId) {
     const query = {
-      text: 'SELECT id, thread_id as "threadId", content, date, owner, is_delete as "isDelete" FROM comments WHERE id = $1',
+      text: 'SELECT id FROM comments WHERE id = $1',
+      values: [commentId],
+    };
+
+    const result = await this._pool.query(query);
+    if (!result.rowCount) {
+      throw new NotFoundError('komentar tidak ditemukan');
+    }
+  }
+
+  async verifyCommentOwner(commentId, owner) {
+    const query = {
+      text: 'SELECT owner FROM comments WHERE id = $1',
       values: [commentId],
     };
 
@@ -39,20 +51,40 @@ class CommentRepositoryPostgres extends CommentRepository {
       throw new NotFoundError('komentar tidak ditemukan');
     }
 
-    const row = result.rows[0];
-    return {
-      id: row.id,
-      threadId: row.threadId,
-      content: row.content,
-      date: new Date(row.date).toISOString(),
-      owner: row.owner,
-      isDelete: row.isDelete,
+    if (result.rows[0].owner !== owner) {
+      throw new AuthorizationError('anda tidak berhak mengakses resource ini');
+    }
+  }
+
+  async verifyCommentBelongsToThread(commentId, threadId) {
+    const query = {
+      text: 'SELECT id FROM comments WHERE id = $1 AND thread_id = $2',
+      values: [commentId, threadId],
     };
+
+    const result = await this._pool.query(query);
+    if (!result.rowCount) {
+      // Dicoding biasanya menganggap mismatch thread-comment => komentar tidak ditemukan
+      throw new NotFoundError('komentar tidak ditemukan');
+    }
   }
 
   async deleteCommentById(commentId) {
     const query = {
-      text: 'UPDATE comments SET is_delete = TRUE WHERE id = $1 RETURNING id',
+      text: 'UPDATE comments SET is_delete = true WHERE id = $1',
+      values: [commentId],
+    };
+
+    await this._pool.query(query);
+  }
+
+  async getCommentById(commentId) {
+    const query = {
+      text: `
+        SELECT id, thread_id as "threadId", content, date, owner, is_delete as "isDelete"
+        FROM comments
+        WHERE id = $1
+      `,
       values: [commentId],
     };
 
@@ -60,27 +92,43 @@ class CommentRepositoryPostgres extends CommentRepository {
     if (!result.rowCount) {
       throw new NotFoundError('komentar tidak ditemukan');
     }
+    return result.rows[0];
   }
 
+  /**
+   * IMPORTANT (Optional Likes):
+   * - Return list comments for a thread
+   * - Must include: id, username, date, content, likeCount
+   * - Soft delete: content harus menjadi "**komentar telah dihapus**"
+   */
   async getCommentsByThreadId(threadId) {
     const query = {
       text: `
-        SELECT comments.id, users.username, comments.date, comments.content, comments.is_delete as "isDelete"
-        FROM comments
-        LEFT JOIN users ON users.id = comments.owner
-        WHERE comments.thread_id = $1
-        ORDER BY comments.date ASC, comments.id ASC
+        SELECT
+          c.id,
+          u.username,
+          c.date,
+          c.content,
+          c.is_delete as "isDelete",
+          COUNT(cl.user_id)::int as "likeCount"
+        FROM comments c
+        LEFT JOIN users u ON u.id = c.owner
+        LEFT JOIN comment_likes cl ON cl.comment_id = c.id
+        WHERE c.thread_id = $1
+        GROUP BY c.id, u.username, c.date, c.content, c.is_delete
+        ORDER BY c.date ASC
       `,
       values: [threadId],
     };
 
     const result = await this._pool.query(query);
-    return result.rows.map((row) => new DetailComment({
+
+    return result.rows.map((row) => ({
       id: row.id,
       username: row.username,
-      date: new Date(row.date).toISOString(),
-      content: row.content,
-      isDelete: row.isDelete,
+      date: row.date,
+      content: row.isDelete ? '**komentar telah dihapus**' : row.content,
+      likeCount: row.likeCount ?? 0,
     }));
   }
 }

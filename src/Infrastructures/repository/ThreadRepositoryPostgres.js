@@ -3,7 +3,7 @@ const NotFoundError = require('../../Commons/exceptions/NotFoundError');
 const AddedThread = require('../../Domains/threads/entities/AddedThread');
 
 class ThreadRepositoryPostgres extends ThreadRepository {
-  constructor(pool, idGenerator) {
+  constructor({ pool, idGenerator }) {
     super();
     this._pool = pool;
     this._idGenerator = idGenerator;
